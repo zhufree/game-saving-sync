@@ -21,6 +21,8 @@
    - 内置常见存档位置规则，例如 `Documents`、`AppData`、Steam userdata、游戏安装目录下的 save/config 目录。
    - 按游戏展示可发送的世界/存档包，让用户确认要发送哪一份存档。
    - DST 会从 `Documents\Klei\DoNotStarveTogether\<用户ID>\Cluster_*` 识别单个世界。
+   - 星露谷会从 `%APPDATA%\StardewValley\Saves\<存档名>` 识别单个农场存档。
+   - 僵尸毁灭计划会从 `%USERPROFILE%\Zomboid\Saves\<模式>\<存档名>` 识别单个存档。
 
 3. **P2P 配对与传输**
    - 发送方创建传输会话并生成一次性配对密钥。
@@ -48,6 +50,7 @@
 - qfluentwidgets 简版 GUI。
 - LAN/localhost 直连 P2P 传输原型：打包、配对密钥、发送、接收、sha256 校验。
 - 公网信令 + 中继兜底原型：填写公网服务器后生成 `GST-...` 远程密钥。
+- 服务端版本检查 API：`GET /api/version?current_version=...`。
 - 路径检测、进程检测、二维码生成、通知等工具函数。
 - 基础单元测试框架。
 
@@ -60,6 +63,22 @@
 ## 公网服务器
 
 服务器配置见 [RELAY_SERVER.md](RELAY_SERVER.md)。
+
+## Windows 打包
+
+打包说明见 [docs/PACKAGING.md](docs/PACKAGING.md)。
+
+快速打包：
+
+```bat
+package_app.bat
+```
+
+打包产物：
+
+```text
+dist\GameSaveTransfer-windows-x64.zip
+```
 
 ## 快速开始
 

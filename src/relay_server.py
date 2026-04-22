@@ -13,7 +13,10 @@ import time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
+
+DEFAULT_LATEST_VERSION = "0.2.0"
+DEFAULT_UPDATE_URL = "https://github.com/zhufree/game-saving-sync"
 
 
 class RelayStore:
@@ -115,6 +118,8 @@ class RelayRequestHandler(BaseHTTPRequestHandler):
     """HTTP API handler for signaling and relay file transfer."""
 
     store: RelayStore
+    latest_version: str = DEFAULT_LATEST_VERSION
+    update_url: str = DEFAULT_UPDATE_URL
 
     def do_POST(self) -> None:
         if self.path != "/api/sessions":
@@ -133,6 +138,9 @@ class RelayRequestHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         parts = _path_parts(self.path)
+        if parts == ["api", "version"]:
+            self._get_version()
+            return
         if len(parts) == 3 and parts[:2] == ["api", "sessions"]:
             self._get_session(parts[2])
             return
@@ -189,6 +197,23 @@ class RelayRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _get_version(self) -> None:
+        query = parse_qs(urlparse(self.path).query)
+        current_version = query.get("current_version", [""])[0]
+        update_available = bool(
+            current_version and _compare_versions(current_version, self.latest_version) < 0
+        )
+        self._send_json(
+            {
+                "app_name": "Game Save Transfer",
+                "current_version": current_version,
+                "latest_version": self.latest_version,
+                "update_available": update_available,
+                "update_url": self.update_url if update_available else "",
+                "github_url": self.update_url,
+            }
+        )
+
     def _read_json(self) -> dict[str, object]:
         length = int(self.headers.get("Content-Length", "0"))
         if length <= 0:
@@ -207,9 +232,18 @@ class RelayRequestHandler(BaseHTTPRequestHandler):
         self._send_json({"ok": False, "error": message}, status)
 
 
-def create_server(host: str, port: int, storage_dir: str, ttl_seconds: int) -> ThreadingHTTPServer:
+def create_server(
+    host: str,
+    port: int,
+    storage_dir: str,
+    ttl_seconds: int,
+    latest_version: str = DEFAULT_LATEST_VERSION,
+    update_url: str = DEFAULT_UPDATE_URL,
+) -> ThreadingHTTPServer:
     """Create a relay HTTP server."""
     RelayRequestHandler.store = RelayStore(storage_dir, ttl_seconds)
+    RelayRequestHandler.latest_version = latest_version
+    RelayRequestHandler.update_url = update_url
     return ThreadingHTTPServer((host, port), RelayRequestHandler)
 
 
@@ -219,16 +253,51 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--storage", default="./relay_storage")
     parser.add_argument("--ttl-seconds", type=int, default=86400)
+    parser.add_argument("--latest-version", default=DEFAULT_LATEST_VERSION)
+    parser.add_argument("--update-url", default=DEFAULT_UPDATE_URL)
     args = parser.parse_args()
 
-    server = create_server(args.host, args.port, args.storage, args.ttl_seconds)
+    server = create_server(
+        args.host,
+        args.port,
+        args.storage,
+        args.ttl_seconds,
+        latest_version=args.latest_version,
+        update_url=args.update_url,
+    )
     print(f"Relay server listening on http://{args.host}:{args.port}")
     print(f"Storage directory: {Path(args.storage).resolve()}")
+    print(f"Latest client version: {args.latest_version}")
     server.serve_forever()
 
 
 def _path_parts(path: str) -> list[str]:
     return [part for part in urlparse(path).path.split("/") if part]
+
+
+def _compare_versions(left: str, right: str) -> int:
+    left_parts = _version_parts(left)
+    right_parts = _version_parts(right)
+    max_length = max(len(left_parts), len(right_parts))
+    left_parts.extend([0] * (max_length - len(left_parts)))
+    right_parts.extend([0] * (max_length - len(right_parts)))
+    if left_parts < right_parts:
+        return -1
+    if left_parts > right_parts:
+        return 1
+    return 0
+
+
+def _version_parts(version: str) -> list[int]:
+    parts: list[int] = []
+    for part in version.strip().lstrip("v").split("."):
+        number = ""
+        for char in part:
+            if not char.isdigit():
+                break
+            number += char
+        parts.append(int(number or 0))
+    return parts or [0]
 
 
 if __name__ == "__main__":

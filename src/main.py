@@ -18,17 +18,18 @@ def setup_logging() -> None:
     """Configure console and file logging."""
     logger.remove()
 
-    logger.add(
-        sys.stderr,
-        format=(
-            "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
-            "<level>{level: <8}</level> | "
-            "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
-            "<level>{message}</level>"
-        ),
-        level="INFO",
-        colorize=True,
-    )
+    if sys.stderr:
+        logger.add(
+            sys.stderr,
+            format=(
+                "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
+                "<level>{level: <8}</level> | "
+                "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
+                "<level>{message}</level>"
+            ),
+            level="INFO",
+            colorize=True,
+        )
 
     log_dir = Path("logs")
     log_dir.mkdir(exist_ok=True)

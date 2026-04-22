@@ -55,6 +55,7 @@ class MainWindow(QMainWindow):
         self.config_path = config_path
         self.installed_game_count = 0
         self.current_sender: DirectTcpSender | None = None
+        self.current_sender_uses_relay = False
 
         setThemeColor("#2b7de9")
         self.setWindowTitle("Game Save Transfer")
@@ -146,6 +147,9 @@ class MainWindow(QMainWindow):
         self.send_key_edit = LineEdit()
         self.send_key_edit.setReadOnly(True)
         self.send_key_edit.setPlaceholderText("生成后的密钥会显示在这里")
+        self.send_key_edit.setToolTip(
+            "公网模式下会生成 GST-短码，接收方也需要填写同一个公网服务器地址。"
+        )
         send_section.addWidget(self.create_pairing_button)
         send_section.addWidget(self.send_key_edit)
         right_layout.addLayout(send_section)
@@ -395,9 +399,11 @@ class MainWindow(QMainWindow):
             sender = DirectTcpSender(archive)
             pairing_key = sender.start()
             relay_url = self.relay_url_edit.text().strip()
+            relay_used = False
             if relay_url:
                 relay_session = create_relay_session(relay_url, pairing_key, archive)
                 key_text = relay_session.transfer_key
+                relay_used = True
                 self.config.relay_server_url = relay_url
                 self.config.save(self.config_path)
             else:
@@ -407,7 +413,9 @@ class MainWindow(QMainWindow):
             return
 
         self.current_sender = sender
+        self.current_sender_uses_relay = relay_used
         self.send_key_edit.setText(key_text)
+        self.send_key_edit.setCursorPosition(0)
         if self.relay_url_edit.text().strip():
             self.log("已生成公网发送密钥，并上传中继兜底包。复制给接收方。")
         else:
@@ -422,10 +430,11 @@ class MainWindow(QMainWindow):
         if not key_text:
             self.warn("请先粘贴配对密钥。")
             return
+        relay_url = self.relay_url_edit.text().strip() or self.config.relay_server_url
 
         thread = threading.Thread(
             target=self._receive_package_worker,
-            args=(key_text,),
+            args=(key_text, relay_url),
             daemon=True,
         )
         thread.start()
@@ -459,16 +468,26 @@ class MainWindow(QMainWindow):
         try:
             sender.serve_once()
             self.transfer_log.emit("发送完成。")
+        except TimeoutError as e:
+            if self.current_sender_uses_relay:
+                self.transfer_log.emit("直连等待已结束；如果对方已通过公网服务器接收，这是正常情况。")
+            else:
+                self.transfer_warning.emit(f"发送失败: {e}")
         except Exception as e:
             self.transfer_warning.emit(f"发送失败: {e}")
         finally:
             sender.close()
             self.current_sender = None
+            self.current_sender_uses_relay = False
 
-    def _receive_package_worker(self, key_text: str) -> None:
+    def _receive_package_worker(self, key_text: str, relay_url: str = "") -> None:
         try:
             if is_relay_transfer_key(key_text):
-                archive_path = receive_with_relay_fallback(key_text, "incoming")
+                archive_path = receive_with_relay_fallback(
+                    key_text,
+                    "incoming",
+                    server_url=relay_url,
+                )
             else:
                 archive_path = receive_archive(key_text, "incoming").archive_path
             received_path = archive_path

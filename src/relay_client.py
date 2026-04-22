@@ -25,20 +25,31 @@ class RelayTransferKey:
     server_url: str
     code: str
 
-    def encode(self) -> str:
+    def encode(self, compact: bool = False) -> str:
+        if compact:
+            return f"GST-{self.code}"
         payload = json.dumps(asdict(self), separators=(",", ":")).encode("utf-8")
         return "GST-" + base64.urlsafe_b64encode(payload).decode("ascii")
 
     @classmethod
-    def decode(cls, value: str) -> RelayTransferKey:
-        if not value.startswith("GST-"):
+    def decode(cls, value: str, server_url: str = "") -> RelayTransferKey:
+        text = value.strip()
+        if not text.startswith("GST-"):
             raise ValueError("Not a relay transfer key")
-        payload = base64.urlsafe_b64decode(value.removeprefix("GST-").encode("ascii"))
-        data = json.loads(payload.decode("utf-8"))
-        key = cls(**data)
-        if key.kind != "relay":
-            raise ValueError(f"Unsupported transfer key kind: {key.kind}")
-        return key
+
+        body = text.removeprefix("GST-")
+        try:
+            padded = body + "=" * (-len(body) % 4)
+            payload = base64.urlsafe_b64decode(padded.encode("ascii"))
+            data = json.loads(payload.decode("utf-8"))
+            key = cls(**data)
+            if key.kind != "relay":
+                raise ValueError(f"Unsupported transfer key kind: {key.kind}")
+            return key
+        except Exception:
+            if not server_url:
+                raise ValueError("Short relay key requires a relay server URL")
+            return cls(kind="relay", server_url=server_url, code=body)
 
 
 @dataclass(frozen=True)
@@ -84,22 +95,27 @@ def create_relay_session(
         upload = httpx.put(
             f"{base_url}/api/sessions/{code}/archive",
             headers={"X-Upload-Token": upload_token},
-            content=f,
+            content=f.read(),
             timeout=timeout_seconds,
         )
     upload.raise_for_status()
 
-    transfer_key = RelayTransferKey(kind="relay", server_url=base_url, code=code).encode()
+    transfer_key = RelayTransferKey(
+        kind="relay",
+        server_url=base_url,
+        code=code,
+    ).encode(compact=True)
     return RelaySession(code=code, upload_token=upload_token, transfer_key=transfer_key)
 
 
 def receive_with_relay_fallback(
     transfer_key: str,
     output_dir: str,
+    server_url: str = "",
     timeout_seconds: float = 20.0,
 ) -> str:
     """Try direct P2P first, then download the relay archive if direct fails."""
-    relay_key = RelayTransferKey.decode(transfer_key)
+    relay_key = RelayTransferKey.decode(transfer_key, server_url=server_url)
     base_url = _normalize_server_url(relay_key.server_url)
 
     session = httpx.get(f"{base_url}/api/sessions/{relay_key.code}", timeout=timeout_seconds)

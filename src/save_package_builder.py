@@ -97,7 +97,13 @@ def sha256_file(path: str | Path) -> str:
 
 
 def _matches_any(path: str, patterns: list[str]) -> bool:
-    return any(fnmatch.fnmatch(path, pattern.replace("\\", "/")) for pattern in patterns)
+    for pattern in patterns:
+        normalized_pattern = pattern.replace("\\", "/")
+        if normalized_pattern in {"**", "**/*"}:
+            return True
+        if fnmatch.fnmatch(path, normalized_pattern):
+            return True
+    return False
 
 
 def _safe_filename(value: str) -> str:

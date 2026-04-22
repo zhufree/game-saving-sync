@@ -89,3 +89,70 @@ def test_read_archive_manifest(tmp_path):
 
     assert manifest["package_id"] == "322330:test"
     assert manifest["metadata"]["app_id"] == "322330"
+
+
+def test_install_project_zomboid_archive_keeps_game_mode_folder(tmp_path):
+    """Project Zomboid saves are installed below their original game mode folder."""
+    source = tmp_path / "source" / "Muldraugh"
+    source.mkdir(parents=True)
+    (source / "map_ver.bin").write_bytes(b"zomboid")
+    archive = build_save_archive(
+        SavePackage(
+            id="108600:test",
+            label="Sandbox / Muldraugh",
+            path=str(source),
+            include_patterns=["*", "**/*"],
+            metadata={"app_id": "108600", "mode": "Sandbox", "save_name": "Muldraugh"},
+        ),
+        str(tmp_path / "archives"),
+    )
+    save_root = tmp_path / "Zomboid" / "Saves"
+    save_root.mkdir(parents=True)
+    config = AppConfig(
+        known_games=[
+            GameEntry(
+                app_id="108600",
+                name="Project Zomboid",
+                save_paths=[str(save_root)],
+            )
+        ]
+    )
+
+    installed = install_received_archive(archive.archive_path, config)
+
+    target = save_root / "Sandbox" / "Muldraugh"
+    assert installed.target_path == str(target)
+    assert (target / "map_ver.bin").read_bytes() == b"zomboid"
+
+
+def test_install_directory_archive_renames_existing_save(tmp_path):
+    """Folder-style saves never overwrite an existing local save."""
+    source = tmp_path / "source" / "Farm_123"
+    source.mkdir(parents=True)
+    (source / "SaveGameInfo").write_text("info", encoding="utf-8")
+    archive = build_save_archive(
+        SavePackage(
+            id="413150:test",
+            label="Farm_123",
+            path=str(source),
+            include_patterns=["*", "**/*"],
+            metadata={"app_id": "413150", "save_name": "Farm_123"},
+        ),
+        str(tmp_path / "archives"),
+    )
+    save_root = tmp_path / "StardewValley" / "Saves"
+    (save_root / "Farm_123").mkdir(parents=True)
+    config = AppConfig(
+        known_games=[
+            GameEntry(
+                app_id="413150",
+                name="Stardew Valley",
+                save_paths=[str(save_root)],
+            )
+        ]
+    )
+
+    installed = install_received_archive(archive.archive_path, config)
+
+    assert installed.target_path == str(save_root / "Farm_123_2")
+    assert (save_root / "Farm_123_2" / "SaveGameInfo").exists()

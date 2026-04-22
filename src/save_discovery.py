@@ -52,6 +52,12 @@ SUPPORTED_GAME_RULES: dict[str, GameSaveRule] = {
         aliases=("Hades",),
         templates=("{USERPROFILE}\\Saved Games\\Hades",),
     ),
+    "108600": GameSaveRule(
+        app_id="108600",
+        rule_id="project-zomboid-default",
+        aliases=("Project Zomboid",),
+        templates=("{USERPROFILE}\\Zomboid\\Saves",),
+    ),
 }
 
 
@@ -159,6 +165,10 @@ def discover_save_packages_for_game(
     """Discover concrete transferable save packages below discovered save roots."""
     if app_id == "322330":
         return discover_dst_world_packages(save_roots)
+    if app_id == "413150":
+        return discover_stardew_save_packages(save_roots)
+    if app_id == "108600":
+        return discover_project_zomboid_save_packages(save_roots)
 
     packages: list[SavePackage] = []
     for root in save_roots:
@@ -177,6 +187,73 @@ def discover_save_packages_for_game(
             )
         )
     return packages
+
+
+def discover_stardew_save_packages(save_roots: list[str]) -> list[SavePackage]:
+    """Discover Stardew Valley save folders, one package per farm/character save."""
+    packages: list[SavePackage] = []
+
+    for root in save_roots:
+        root_path = Path(root)
+        if not root_path.exists():
+            continue
+
+        save_dirs = [root_path] if _looks_like_stardew_save_dir(root_path) else []
+        save_dirs.extend(
+            child
+            for child in root_path.iterdir()
+            if child.is_dir() and _looks_like_stardew_save_dir(child)
+        )
+
+        for save_dir in save_dirs:
+            packages.append(
+                SavePackage(
+                    id=f"413150:{save_dir}",
+                    label=save_dir.name,
+                    path=str(save_dir),
+                    root_path=str(root_path),
+                    include_patterns=["*", "**/*"],
+                    exclude_patterns=["**/*.log"],
+                    metadata={
+                        "app_id": "413150",
+                        "save_name": save_dir.name,
+                    },
+                )
+            )
+
+    return _dedupe_packages(packages)
+
+
+def discover_project_zomboid_save_packages(save_roots: list[str]) -> list[SavePackage]:
+    """Discover Project Zomboid saves below Saves/<mode>/<save name>."""
+    packages: list[SavePackage] = []
+
+    for root in save_roots:
+        root_path = Path(root)
+        if not root_path.exists():
+            continue
+
+        for mode_dir in sorted(path for path in root_path.iterdir() if path.is_dir()):
+            for save_dir in sorted(path for path in mode_dir.iterdir() if path.is_dir()):
+                if not _looks_like_project_zomboid_save_dir(save_dir):
+                    continue
+                packages.append(
+                    SavePackage(
+                        id=f"108600:{save_dir}",
+                        label=f"{mode_dir.name} / {save_dir.name}",
+                        path=str(save_dir),
+                        root_path=str(root_path),
+                        include_patterns=["*", "**/*"],
+                        exclude_patterns=["**/*.log", "**/console.txt"],
+                        metadata={
+                            "app_id": "108600",
+                            "mode": mode_dir.name,
+                            "save_name": save_dir.name,
+                        },
+                    )
+                )
+
+    return _dedupe_packages(packages)
 
 
 def discover_dst_world_packages(save_roots: list[str]) -> list[SavePackage]:
@@ -285,6 +362,26 @@ def _looks_like_dst_cluster(cluster_dir: Path) -> bool:
             (cluster_dir / "cluster.ini").exists(),
             (cluster_dir / "Master").is_dir(),
             (cluster_dir / "Caves").is_dir(),
+        ]
+    )
+
+
+def _looks_like_stardew_save_dir(save_dir: Path) -> bool:
+    if (save_dir / "SaveGameInfo").is_file():
+        return True
+    return any(
+        path.is_file() and path.name.startswith(f"{save_dir.name}_")
+        for path in save_dir.iterdir()
+    )
+
+
+def _looks_like_project_zomboid_save_dir(save_dir: Path) -> bool:
+    return any(
+        [
+            (save_dir / "map_ver.bin").is_file(),
+            (save_dir / "map.bin").is_file(),
+            (save_dir / "players.db").is_file(),
+            (save_dir / "worlddictionary.bin").is_file(),
         ]
     )
 

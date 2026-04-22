@@ -45,3 +45,21 @@ def test_build_save_archive_writes_manifest_and_files(tmp_path):
     assert len(archive.sha256) == 64
     with zipfile.ZipFile(archive.archive_path) as zf:
         assert sorted(zf.namelist()) == ["Master/save/session", "manifest.json"]
+
+
+def test_double_star_include_matches_root_files(tmp_path):
+    """Generic directory packages include files directly inside the selected folder."""
+    save = tmp_path / "Meadow_123"
+    save.mkdir()
+    (save / "SaveGameInfo").write_text("info", encoding="utf-8")
+    (save / "Meadow_123").write_text("save", encoding="utf-8")
+    package = SavePackage(
+        id="stardew:test",
+        label="Meadow_123",
+        path=str(save),
+        include_patterns=["**/*"],
+    )
+
+    files = collect_package_files(package)
+
+    assert [path.as_posix() for path in files] == ["Meadow_123", "SaveGameInfo"]

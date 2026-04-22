@@ -4,7 +4,9 @@
 from src.config import SaveLocationTemplate
 from src.save_discovery import (
     discover_dst_world_packages,
+    discover_project_zomboid_save_packages,
     discover_save_paths_for_game,
+    discover_stardew_save_packages,
     discover_supported_games,
     expand_save_template,
     is_supported_game,
@@ -31,7 +33,9 @@ def test_discover_save_paths_for_supported_game(monkeypatch, tmp_path):
     """Built-in rules discover existing save directories."""
     monkeypatch.setenv("APPDATA", str(tmp_path / "Roaming"))
     save_dir = tmp_path / "Roaming" / "StardewValley" / "Saves"
-    save_dir.mkdir(parents=True)
+    farm = save_dir / "RiverFarm_123456789"
+    farm.mkdir(parents=True)
+    (farm / "SaveGameInfo").write_text("info", encoding="utf-8")
     game = SteamGame(
         app_id="413150",
         name="Stardew Valley",
@@ -44,13 +48,15 @@ def test_discover_save_paths_for_supported_game(monkeypatch, tmp_path):
 
     assert entry.rule_id == "stardew-valley-default"
     assert entry.save_paths == [str(save_dir)]
-    assert entry.save_packages[0].path == str(save_dir)
+    assert entry.save_packages[0].path == str(farm)
+    assert entry.save_packages[0].label == "RiverFarm_123456789"
 
 
 def test_discover_supported_games_filters_unsupported(tmp_path):
     """Only games with built-in rules are returned for the simple MVP."""
     games = [
         SteamGame("413150", "Stardew Valley", "Stardew Valley", "", ""),
+        SteamGame("108600", "Project Zomboid", "ProjectZomboid", "", ""),
         SteamGame("999", "Unsupported", "Unsupported", "", ""),
     ]
 
@@ -60,7 +66,7 @@ def test_discover_supported_games_filters_unsupported(tmp_path):
         common_templates=[],
     )
 
-    assert [entry.app_id for entry in entries] == ["413150"]
+    assert [entry.app_id for entry in entries] == ["413150", "108600"]
 
 
 def test_common_templates_are_used_for_existing_paths(tmp_path):
@@ -130,3 +136,34 @@ def test_discover_dst_world_packages_searches_one_extra_level(tmp_path):
 
     assert len(packages) == 1
     assert packages[0].path == str(cluster)
+
+
+def test_discover_stardew_save_packages_finds_each_save_folder(tmp_path):
+    """Stardew scanner refines the Saves root into individual save folders."""
+    saves_root = tmp_path / "StardewValley" / "Saves"
+    farm = saves_root / "Meadow_987654321"
+    farm.mkdir(parents=True)
+    (farm / "SaveGameInfo").write_text("info", encoding="utf-8")
+    (farm / "Meadow_987654321").write_text("save", encoding="utf-8")
+
+    packages = discover_stardew_save_packages([str(saves_root)])
+
+    assert len(packages) == 1
+    assert packages[0].path == str(farm)
+    assert packages[0].include_patterns == ["*", "**/*"]
+
+
+def test_discover_project_zomboid_save_packages_finds_mode_saves(tmp_path):
+    """Project Zomboid scanner sends each Saves/<mode>/<save> folder separately."""
+    saves_root = tmp_path / "Zomboid" / "Saves"
+    save = saves_root / "Sandbox" / "Muldraugh"
+    save.mkdir(parents=True)
+    (save / "map_ver.bin").write_bytes(b"zomboid")
+
+    packages = discover_project_zomboid_save_packages([str(saves_root)])
+
+    assert len(packages) == 1
+    assert packages[0].label == "Sandbox / Muldraugh"
+    assert packages[0].path == str(save)
+    assert packages[0].metadata["mode"] == "Sandbox"
+    assert packages[0].include_patterns == ["*", "**/*"]
