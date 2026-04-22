@@ -1,0 +1,57 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.python-version
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+*.whl
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Project specific
+backups/
+incoming/
+outgoing/
+relay_storage/
+snapshots/
+*.zip
+*.log
+config.json
+config.local.json
+.env
+.env.*
+!.env.example
+logs/
+
+# Testing
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+junit.xml
+
+# PyInstaller
+*.spec
+
+# OS files
+Thumbs.db
+.DS_Store
